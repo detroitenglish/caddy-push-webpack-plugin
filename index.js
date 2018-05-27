@@ -58,7 +58,7 @@ status 404 {
   ${options.caddyImportFile}
 }
 `
-    compilation.assets[options.caddyImport] = {
+    compilation.assets[options.caddyImportFile] = {
       source: () => directive,
       size: () => directive.length,
     }
