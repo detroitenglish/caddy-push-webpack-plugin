@@ -1,0 +1,17 @@
+{
+  "name": "caddy-push-webpack-plugin",
+  "version": "0.0.1",
+  "description": "Automatically generate a Caddy server header directive with link preloads for http2 server push",
+  "main": "index.js",
+  "author": "Dave Willenberg",
+  "license": "MIT",
+  "dependencies": {
+    "lodash.isregexp": "^4.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^4.19.1",
+    "eslint-config-prettier": "^2.9.0",
+    "eslint-plugin-prettier": "^2.6.0",
+    "prettier": "^1.13.0"
+  }
+}

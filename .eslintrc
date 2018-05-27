@@ -1,0 +1,29 @@
+{
+  "root": true,
+  "parserOptions": {
+    "ecmaVersion": 8,
+    "parser": "babel-eslint",
+    "sourceType": "module"
+  },
+  "env": {
+    "browser": false,
+    "node": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:prettier/recommended",
+  ],
+  "rules": {
+    "no-console": 0,
+    "prettier/prettier": ["error",
+      {
+        "printWidth": 80,
+        "singleQuote": true,
+        "trailingComma": "es5",
+        "bracketSpacing": true,
+        "semi": false,
+        "parser": "babylon"
+      }
+    ],
+  }
+}
