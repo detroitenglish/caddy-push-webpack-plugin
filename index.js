@@ -55,7 +55,7 @@ header ${options.headerPath} {
 }
 
 status 404 {
-  ${options.caddyImportFile}
+  /${options.caddyImportFile}
 }
 `
     compilation.assets[options.caddyImportFile] = {
