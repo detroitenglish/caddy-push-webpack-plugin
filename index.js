@@ -1,5 +1,5 @@
 const isRegExp = require('lodash.isregexp')
-const isPlainObject = require('lodash.isPlainObject')
+const isPlainObject = require('lodash.isplainobject')
 function caddyPushDirectivePlugin({
   caddyImportFile = 'push.caddy',
   headerPath = '/',
