@@ -54,9 +54,7 @@ header ${options.headerPath} {
   ${linkHeader(assets)}
 }
 
-status 404 {
-  /${options.caddyImportFile}
-}
+status 404 /${options.caddyImportFile}
 `
     compilation.assets[options.caddyImportFile] = {
       source: () => directive,
