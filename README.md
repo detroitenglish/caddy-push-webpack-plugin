@@ -33,14 +33,16 @@ The config object supports the following options:
 * `caddyImportFile`: filepath relative to your webpack `output` directory which you will import into your Caddyfile (default: `push.caddy` );
 * `headerPath`: path **beginning with '/'** to which Caddy will add the `Link` header (default: `'/'` );
 * `includePattern`: Regular expression definining which assets will be included in the `Link` header as `rel=preload` and pushed to the client (default: `/\.(js|css|html)$/` );
-* `includePaths`: Array of objects for including custom `rel=preload` entries. Each included path object supports the following attributes:
+* `includePaths`: Array (default: `[]` ) of objects for including custom Link preload entries. Each included object supports the following properties:
 ````javascript
 {
-  path: `/path/to/your/asset`, // required
-  as: `sometype`, // required - See https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#What_types_of_content_can_be_preloaded
+  path: `/path/to/your/asset`, // required, no default
+  as: `sometype`, // required, no default
   crossorigin: ``, // optional CORS attribute, no default
 }
 ````
+See [the MDN documentation](https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#What_types_of_content_can_be_preloaded) for a list of acceptable 'as' attribute values
+
 
 ## Example
 
