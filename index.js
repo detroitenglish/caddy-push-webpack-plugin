@@ -1,8 +1,8 @@
 const isRegExp = require('lodash.isregexp')
-
+const isPlainObject = require('lodash.isPlainObject')
 function caddyPushDirectivePlugin({
-  caddyImport = 'push.caddy',
-  indexFile = '',
+  caddyImportFile = 'push.caddy',
+  headerPath = '/',
   includePattern = new RegExp('js$|css$|html$'),
   includePaths = [],
   // exclude = /(?!.)/, // TODO: add exclusion regex pattern
@@ -14,6 +14,11 @@ function caddyPushDirectivePlugin({
   }
   if (includePaths.length) {
     for (let asset of includePaths) {
+      if (!isPlainObject(asset)) {
+        throw new Error(
+          `[caddy-push-plugin] includePath entries must be objects`
+        )
+      }
       if (!asset.hasOwnProperty('path') || !asset.hasOwnProperty('as')) {
         throw new Error(
           `[caddy-push-plugin] All includePaths assets require 'path' and 'as' properties`
@@ -21,14 +26,17 @@ function caddyPushDirectivePlugin({
       }
     }
   }
+  if (headerPath[0] !== '/') {
+    throw new Error(`[caddy-push-plugin] headerPath MUST begin with '/'`)
+  }
   // if (!isRegExp(exclude)) {
   //   throw new Error(`Option 'exclude' must be a regular expression`)
   // }
-  if (!caddyImport.length || typeof caddyImport !== 'string') {
+  if (!caddyImportFile.length || typeof caddyImportFile !== 'string') {
     throw new Error(`[caddy-push-plugin] Option 'caddyImport' must be a string`)
   }
 
-  this.options = { caddyImport, indexFile, includePattern, includePaths }
+  this.options = { caddyImportFile, headerPath, includePattern, includePaths }
 }
 
 caddyPushDirectivePlugin.prototype.apply = function(compiler) {
@@ -41,12 +49,13 @@ caddyPushDirectivePlugin.prototype.apply = function(compiler) {
       return includePattern.test(asset) // && !exclude.test(asset)
     })
 
-    const directive = `header /${options.indexFile} {
+    const directive = `
+header ${options.headerPath} {
   ${linkHeader(assets)}
 }
 
 status 404 {
-  /${options.caddyImport}
+  ${options.caddyImportFile}
 }
 `
     compilation.assets[options.caddyImport] = {
@@ -58,15 +67,27 @@ status 404 {
 
     function assetsLinkHeaderValue(files) {
       const includedPaths = includePaths.map(asset => {
-        return `<${asset.path}>; rel=preload; as=${asset.as}`
+        let { crossorigin } = asset
+        let link = `<${asset.path}>; rel=preload; as=${asset.as}`
+        if (asset.as === 'font') {
+          // fonts MUST be crossorigin=anonymous
+          // see https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#Cross-origin_fetches
+          link += '; crossorigin=anonymous'
+          return link
+        }
+        if (crossorigin) {
+          link += `; crossorigin=${crossorigin}`
+        }
+        return link
       })
 
       return files
         .map(asset => {
-          const { crossorigin } = asset
           const preloadAs = fileAs(asset)
           if (!preloadAs) {
-            console.warn(`No suitable 'as' attribute match for ${asset}`)
+            console.warn(
+              `No suitable 'as' attribute match for ${asset} - excluding!`
+            )
             return null
           }
           let link = `</${asset}>; rel=preload; as=${preloadAs}`
@@ -74,10 +95,6 @@ status 404 {
             // fonts MUST be crossorigin=anonymous
             // see https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#Cross-origin_fetches
             link += '; crossorigin=anonymous'
-            return link
-          }
-          if (crossorigin) {
-            link += `; crossorigin=${crossorigin}`
           }
           return link
         })

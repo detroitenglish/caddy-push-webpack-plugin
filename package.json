@@ -10,6 +10,7 @@
   },
   "homepage": "https://github.com/detroitenglish/caddy-push-webpack-plugin",
   "dependencies": {
+    "lodash.isplainobject": "^4.0.6",
     "lodash.isregexp": "^4.0.1"
   },
   "files": [
@@ -37,5 +38,7 @@
     "http2",
     "server-push"
   ],
-  "engines" : { "node" : ">=6" }
+  "engines": {
+    "node": ">=6"
+  }
 }
