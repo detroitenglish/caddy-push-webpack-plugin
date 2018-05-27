@@ -21,6 +21,9 @@
     "eslint-plugin-prettier": "^2.6.0",
     "prettier": "^1.13.0"
   },
+  "peerDependencies": {
+    "webpack": ">=4"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/detroitenglish/caddy-push-webpack-plugin.git"
@@ -31,6 +34,8 @@
     "caddy",
     "push",
     "preload",
-    "http2"
-  ]
+    "http2",
+    "server-push"
+  ],
+  "engines" : { "node" : ">=6" }
 }
