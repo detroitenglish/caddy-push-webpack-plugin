@@ -3,25 +3,29 @@ const isPlainObject = require('lodash.isplainobject')
 function caddyPushDirectivePlugin({
   caddyImportFile = 'push.caddy',
   headerPath = '/',
-  includePattern = new RegExp('js$|css$|html$'),
-  includePaths = [],
+  includePatterns = [/\.(html|css|js)(\?.*)?$/],
+  includeFiles = [],
   // exclude = /(?!.)/, // TODO: add exclusion regex pattern
 }) {
-  if (!isRegExp(includePattern)) {
+  if (!Array.isArray(includePatterns) && isRegExp(includePatterns)) {
+    includePatterns = [includePatterns]
+  }
+
+  if (!includePatterns.every(isRegExp)) {
     throw new Error(
-      `[caddy-push-plugin] Option 'includePattern' must be a regular expression`
+      `[caddy-push-plugin] All 'includePatterns' entries must be regular expressions`
     )
   }
-  if (includePaths.length) {
-    for (let asset of includePaths) {
+  if (includeFiles.length) {
+    for (let asset of includeFiles) {
       if (!isPlainObject(asset)) {
         throw new Error(
-          `[caddy-push-plugin] includePath entries must be objects`
+          `[caddy-push-plugin] All 'includePaths' entries must be objects`
         )
       }
       if (!asset.hasOwnProperty('path') || !asset.hasOwnProperty('as')) {
         throw new Error(
-          `[caddy-push-plugin] All includePaths assets require 'path' and 'as' properties`
+          `[caddy-push-plugin] All includeFiles assets require 'path' and 'as' properties`
         )
       }
     }
@@ -36,17 +40,17 @@ function caddyPushDirectivePlugin({
     throw new Error(`[caddy-push-plugin] Option 'caddyImport' must be a string`)
   }
 
-  this.options = { caddyImportFile, headerPath, includePattern, includePaths }
+  this.options = { caddyImportFile, headerPath, includePatterns, includeFiles }
 }
 
 caddyPushDirectivePlugin.prototype.apply = function(compiler) {
   const { options } = this
 
   return compiler.plugin('emit', function(compilation, callback) {
-    const { includePattern, includePaths } = options
+    const { includePatterns, includeFiles } = options
 
     const assets = Object.keys(compilation.assets).filter(asset => {
-      return includePattern.test(asset) // && !exclude.test(asset)
+      return includePatterns.every(pattern => pattern.test(asset)) // && !exclude.test(asset)
     })
 
     const directive = `
@@ -64,10 +68,12 @@ status 404 /${options.caddyImportFile}
     return callback(null)
 
     function assetsLinkHeaderValue(files) {
-      const includedPaths = includePaths.map(asset => {
-        let { crossorigin } = asset
-        let link = `<${asset.path}>; rel=preload; as=${asset.as}`
-        if (asset.as === 'font') {
+      const includedPaths = includeFiles.map(asset => {
+        const { type, nopush = false, crossorigin, path, as: loadAs } = asset
+        let link = `<${path}>; rel=preload; as=${loadAs}`
+        if (type) link += `; type=${type}`
+        if (!!nopush === true) link += `; nopush`
+        if (loadAs === 'font') {
           // fonts MUST be crossorigin=anonymous
           // see https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#Cross-origin_fetches
           link += '; crossorigin=anonymous'
@@ -80,6 +86,7 @@ status 404 /${options.caddyImportFile}
       })
 
       return files
+        .filter(asset => !includeFiles.find(file => file.path === asset)) // override patterns with manual includes
         .map(asset => {
           const preloadAs = fileAs(asset)
           if (!preloadAs) {
