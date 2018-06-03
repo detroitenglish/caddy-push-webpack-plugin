@@ -1,7 +1,7 @@
 # caddy-push-webpack-plugin
 Generate a [Caddy server header directive](https://caddyserver.com/docs/header) with Link preloads for for effortless leveraging of Caddy's link header detection for http2 server push.
 
-**WARNING**: There could very well be serious security issues in deploying this technique that I am not clever enough to recognize. **I THEREFORE DO NOT RECOMMEND USING THIS IN PRODUCTION**. Unless you like to live dangerously, in which case, use at your own risk!
+**WARNING**: There could very well be serious security issues in deploying this technique that I am not clever enough to recognize. Use at your own risk!
 
 NOTE: You **must** import the generatated file in your Caddyfile using Caddy's `import` directive, and then restart your Caddy instance in order for the changes to take effect.
 
@@ -32,13 +32,16 @@ The config object supports the following options:
 
 * `caddyImportFile`: filepath relative to your webpack `output` directory which you will import into your Caddyfile (default: `push.caddy` );
 * `headerPath`: path **beginning with '/'** to which Caddy will add the `Link` header (default: `'/'` );
-* `includePattern`: Regular expression definining which assets will be included in the `Link` header as `rel=preload` and pushed to the client (default: `/\.(js|css|html)$/` );
-* `includePaths`: Array (default: `[]` ) of objects for including custom Link preload entries. Each included object supports the following properties:
+* `includePatterns`: Array of regular expressions for assets to be included in the `Link` header as `rel=preload` and pushed to the client (default: `[/\.(html|css|js)(\?.*)?$/]` );
+* `includeFiles`: Array (default: `[]` ) of objects for manually defining custom Link preload entries. Each included object supports the following properties:
+
 ````javascript
 {
   path: `/path/to/your/asset`, // required, no default
-  as: `sometype`, // required, no default
-  crossorigin: ``, // optional CORS attribute, no default
+  as: `waffle`, // required, no default
+  crossorigin: `anonymous`, // optional CORS attribute, no default
+  type: `application/javascript`, // option type attribute, no default
+  nopush: false, // boolean; optional directive instructing clients to preload, but prevent server push; default false
 }
 ````
 See [the MDN documentation](https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#What_types_of_content_can_be_preloaded) for a list of acceptable 'as' attribute values
@@ -50,7 +53,7 @@ Assuming webpack produces the following assets:
 ````
 - static/js/app.js
 - static/css/style.css
-- static/img/dancing-waffle.gif
+- static/font/superCoolFont.woff
 - favicon.ico
 - index.html
 ````
@@ -61,12 +64,13 @@ The following plugin config:
 new caddyPushPlugin({
   caddyImportFile: `foo-directive.caddy`,
   headerPath: `/login`,
-  includePattern: /\.(css|js|ico)$/,
-  includePaths: [
+  includePatterns: /\.(css|js|ico)$/,
+  includeFiles: [
     {
-      path: `/login/_session`,
-      as: `fetch`,
-      crossorigin: `use-credentials`,
+      path: `/static/font/superCoolFont.woff`,
+      as: `font`,
+      crossorigin: `anonymous`,
+      nopush: true,
     }
   ],
 }),
@@ -83,27 +87,27 @@ new caddyPushPlugin({
 ````
 
 ...which will look like so:
-````go
+````
 header /login {
-  Link "</static/js/app.js>; rel=preload; as=script, </static/js/app.js>; rel=preload; as=script, </static/css/style.css>; rel=preload; as=style, </favicon.ico>; rel=preload; as=icon, </login/_session>; rel=preload; as=fetch; crossorigin=use-credentials;"
+  Link "</static/js/app.js>; rel=preload; as=script, </static/js/app.js>; rel=preload; as=script, </static/css/style.css>; rel=preload; as=style, </favicon.ico>; rel=preload; as=icon, <//some-cdn.example/superCoolFont.css>; rel=preload; as=style; crossorigin=anonymous; nopush;"
 }
 
-// This is auto-generated because of obvious security implications
+# Auto-generated for security reasons
 status 404 /foo-directive.caddy
 ````
 
 ...which you then import in your Caddyfile:
-````go
+````
 super-cool-app.example {
 
-  // ... Caddyfile config stuff
+  # ... Caddyfile config stuff
 
-  // and don't forget this ;)
+  # don't forget the push directive!
   push
 
   import "/absolute/path/to/app/foo-directive.caddy"
 
-  // ... rest of your Caddyfile
+  # ... rest of your Caddyfile
 
 }
 ````
@@ -111,13 +115,16 @@ super-cool-app.example {
 ## Caveats
 
 ### Cache awareness
-If you use the default headerPath (`/`), then Caddy is going to push *every* asset in your generated `Link` header for *every* request to your site. You probably do not want this, and must disable this behavior on a per-asset and/or per-directory basis like so:
+If you use the default headerPath ( `/` ),  Caddy is going to push *every* asset in your generated `Link` header for *every* resource request to your site domain. You probably do not want this, and must disable this behavior on a per-asset and/or per-directory basis like so:
 
 ````go
 header /static -Link
-header /login -Link
-header /other/example/path/lol -Link
+header /login/_session -Link
+header /other/example/path/lol.jpg -Link
 ````
+
+### Exluding assets
+If you would like to exclude a particular asset for whatever reason, add a negative lookahead regular expression construct to the `includePatterns` array e.g. `/^(?:dont-push-me\.js)/`
 
 ### Server restart
 After uploading your generated files to your server, you'll need to restart your Caddy instance in order for any changes to take effect.
@@ -128,4 +135,4 @@ After uploading your generated files to your server, you'll need to restart your
 - [ ] Confer with Caddy devs about possible security issues
 - [ ] Learn to write tests, and write tests!
 - [ ] Add support asset file globbing
-- [ ] Add support for `excludePattern` regex + globs
+- [ ] ~~Add support for `excludePattern` regex + globs~~ Use use a negative lookahead...
