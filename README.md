@@ -124,7 +124,7 @@ header /other/example/path/lol.jpg -Link
 ````
 
 ### Exluding assets
-If you would like to exclude a particular asset for whatever reason, add a negative lookahead regular expression construct to the `includePatterns` array e.g. `/^(?:dont-push-me\.js)/`
+If you would like to exclude a particular asset for whatever reason, add a negative lookahead regular expression construct to the `includePatterns` array e.g. `/^(?!dont-push-me\.js)/`
 
 ### Server restart
 After uploading your generated files to your server, you'll need to restart your Caddy instance in order for any changes to take effect.
