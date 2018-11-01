@@ -116,6 +116,7 @@ status 404 /${options.caddyImportFile}
     function fileAs(file) {
       const extensions = {
         js: 'script',
+        mjs: 'script',
         css: 'style',
         woff: 'font',
         woff2: 'font',
