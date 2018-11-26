@@ -5,7 +5,9 @@ function caddyPushDirectivePlugin({
   headerPath = '/',
   includePatterns = [/\.(html|css|js)(\?.*)?$/],
   includeFiles = [],
-  // exclude = /(?!.)/, // TODO: add exclusion regex pattern
+  allAnonymous = false,
+  // TODO: add exclusion regex pattern
+  // exclude = /(?!.)/,
 }) {
   if (!Array.isArray(includePatterns) && isRegExp(includePatterns)) {
     includePatterns = [includePatterns]
@@ -33,21 +35,24 @@ function caddyPushDirectivePlugin({
   if (headerPath[0] !== '/') {
     throw new Error(`[caddy-push-plugin] headerPath MUST begin with '/'`)
   }
-  // if (!isRegExp(exclude)) {
-  //   throw new Error(`Option 'exclude' must be a regular expression`)
-  // }
+
   if (!caddyImportFile.length || typeof caddyImportFile !== 'string') {
     throw new Error(`[caddy-push-plugin] Option 'caddyImport' must be a string`)
   }
 
-  this.options = { caddyImportFile, headerPath, includePatterns, includeFiles }
+  this.options = {
+    caddyImportFile,
+    headerPath,
+    includePatterns,
+    includeFiles,
+    allAnonymous,
+  }
 }
 
 caddyPushDirectivePlugin.prototype.apply = function(compiler) {
   const { options } = this
-
   return compiler.plugin('emit', function(compilation, callback) {
-    const { includePatterns, includeFiles } = options
+    const { includePatterns, includeFiles, allAnonymous } = options
 
     const assets = Object.keys(compilation.assets).filter(asset => {
       return includePatterns.every(pattern => pattern.test(asset)) // && !exclude.test(asset)
@@ -73,14 +78,9 @@ status 404 /${options.caddyImportFile}
         let link = `<${path}>; rel=preload; as=${loadAs}`
         if (type) link += `; type=${type}`
         if (!!nopush === true) link += `; nopush`
-        if (loadAs === 'font') {
-          // fonts MUST be crossorigin=anonymous
-          // see https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#Cross-origin_fetches
+        // fonts MUST be crossorigin=anonymous !
+        if (loadAs === 'font' || crossorigin || !!allAnonymous) {
           link += '; crossorigin=anonymous'
-          return link
-        }
-        if (crossorigin) {
-          link += `; crossorigin=${crossorigin}`
         }
         return link
       })

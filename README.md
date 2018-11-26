@@ -31,19 +31,21 @@ plugins: [
 The config object supports the following options:
 
 * `caddyImportFile`: filepath relative to your webpack `output` directory which you will import into your Caddyfile (default: `push.caddy` );
+* `allAnonymous`: Add `crossorigin=anonymous` directive to all pushed assets
+  regardless of MIME type (default: `false`)
 * `headerPath`: path **beginning with '/'** to which Caddy will add the `Link` header (default: `'/'` );
 * `includePatterns`: Array of regular expressions for assets to be included in the `Link` header as `rel=preload` and pushed to the client (default: `[/\.(html|css|js)(\?.*)?$/]` );
 * `includeFiles`: Array (default: `[]` ) of objects for manually defining custom Link preload entries. Each included object supports the following properties:
 
-````javascript
-{
-  path: `/path/to/your/asset`, // required, no default
-  as: `waffle`, // required, no default
-  crossorigin: `anonymous`, // optional CORS attribute, no default
-  type: `application/javascript`, // option type attribute, no default
-  nopush: false, // boolean; optional directive instructing clients to preload, but prevent server push; default false
-}
-````
+  ````javascript
+  {
+    path: `/path/to/your/asset`, // required, no default
+    as: `waffle`, // required, no default
+    crossorigin: `anonymous`, // optional CORS attribute, no default
+    type: `application/javascript`, // option type attribute, no default
+    nopush: false, // boolean; optional directive instructing clients to preload, but prevent server push; default false
+  }
+  ````
 See [the MDN documentation](https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#What_types_of_content_can_be_preloaded) for a list of acceptable 'as' attribute values
 
 
@@ -135,4 +137,5 @@ After uploading your generated files to your server, you'll need to restart your
 - [ ] Confer with Caddy devs about possible security issues
 - [ ] Learn to write tests, and write tests!
 - [ ] Add support asset file globbing
-- [ ] ~~Add support for `excludePattern` regex + globs~~ Use use a negative lookahead...
+- [ ] ~~Add support for `excludePattern` regex + globs~~ Use use a negative
+  lookahead...
