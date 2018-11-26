@@ -96,9 +96,8 @@ status 404 /${options.caddyImportFile}
             return null
           }
           let link = `</${asset}>; rel=preload; as=${preloadAs}`
-          if (preloadAs === 'font') {
-            // fonts MUST be crossorigin=anonymous
-            // see https://developer.mozilla.org/en-US/docs/Web/HTML/Preloading_content#Cross-origin_fetches
+          // fonts MUST be crossorigin=anonymous !
+          if (preloadAs === 'font' || !!allAnonymous) {
             link += '; crossorigin=anonymous'
           }
           return link
