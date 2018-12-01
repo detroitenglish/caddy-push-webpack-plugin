@@ -34,15 +34,18 @@ The config object supports the following options:
 * `allAnonymous`: Add `crossorigin=anonymous` directive to all pushed assets
   regardless of MIME type (default: `false`)
 * `headerPath`: path **beginning with '/'** to which Caddy will add the `Link` header (default: `'/'` );
-* `includePatterns`: Array of regular expressions for assets to be included in the `Link` header as `rel=preload` and pushed to the client (default: `[/\.(html|css|js)(\?.*)?$/]` );
+* `includePatterns`: Array of `RegExp` or glob patterns for assets to be included in the `Link` header as `rel=preload` and pushed to the client (default: `[/\.(html|css|js)(\?.*)?$/]` );
+* `ignorePatterns`: Array of `RegExp` or glob patterns for excluding assets (default: `[]`)
+* `prefetchPatterns`: Array of `RegExp` or glob patterns which will receive a
+  prefetch directive instead of preload (default: `[]`)
 * `includeFiles`: Array (default: `[]` ) of objects for manually defining custom Link preload entries. Each included object supports the following properties:
 
   ````javascript
   {
-    path: `/path/to/your/asset`, // required, no default
-    as: `waffle`, // required, no default
+    path: `/path/to/your/asset.json`, // required, no default
+    as: `fetch`, // required, no default
     crossorigin: `anonymous`, // optional CORS attribute, no default
-    type: `application/javascript`, // option type attribute, no default
+    type: `application/json`, // option type attribute, no default
     nopush: false, // boolean; optional directive instructing clients to preload, but prevent server push; default false
   }
   ````
