@@ -1,28 +1,55 @@
-const isRegExp = require('lodash.isregexp')
-const isPlainObject = require('lodash.isplainobject')
+const path = require('path')
+const minimatch = require('minimatch')
+
+function testRegexOrGlob(val) {
+  if (val instanceof RegExp)
+    return asset => {
+      const base = path.basename(asset)
+      const result = val.test(base)
+      process.env.DEBUG &&
+        console.log(`Testing ${base} with RegExp ${val.toString()}: ${result}`)
+      return result
+    }
+  else if (typeof val === 'string')
+    return asset => {
+      const base = path.basename(asset)
+      const result = minimatch(base, val)
+      process.env.DEBUG &&
+        console.log(`Testing ${base} with glob '${val}': ${result}`)
+      return result
+    }
+  else {
+    console.warn(
+      `[caddy-push-plugin] Patterns must be RegExp or strings!`,
+      `(got ${JSON.stringify(val)} as ${typeof val})`
+    )
+    return () => {}
+  }
+}
+
 function caddyPushDirectivePlugin({
   caddyImportFile = 'push.caddy',
   headerPath = '/',
   includePatterns = [/\.(html|css|js)(\?.*)?$/],
+  ignorePatterns = [],
+  prefetchPatterns = [],
   includeFiles = [],
   allAnonymous = false,
-  // TODO: add exclusion regex pattern
-  // exclude = /(?!.)/,
 }) {
-  if (!Array.isArray(includePatterns) && isRegExp(includePatterns)) {
+  if (!Array.isArray(includePatterns)) {
     includePatterns = [includePatterns]
   }
-
-  if (!includePatterns.every(isRegExp)) {
-    throw new Error(
-      `[caddy-push-plugin] All 'includePatterns' entries must be regular expressions`
-    )
+  if (!Array.isArray(ignorePatterns)) {
+    ignorePatterns = [ignorePatterns]
+  }
+  if (!Array.isArray(prefetchPatterns)) {
+    prefetchPatterns = [prefetchPatterns]
   }
   if (includeFiles.length) {
     for (let asset of includeFiles) {
-      if (!isPlainObject(asset)) {
+      if (typeof asset !== `object` || !('hasOwnProperty' in asset)) {
         throw new Error(
-          `[caddy-push-plugin] All 'includePaths' entries must be objects`
+          `[caddy-push-plugin] All 'includePaths' entries must be plain objects`
         )
       }
       if (!asset.hasOwnProperty('path') || !asset.hasOwnProperty('as')) {
@@ -43,7 +70,9 @@ function caddyPushDirectivePlugin({
   this.options = {
     caddyImportFile,
     headerPath,
-    includePatterns,
+    includePatterns: includePatterns.map(testRegexOrGlob),
+    ignorePatterns: ignorePatterns.map(testRegexOrGlob),
+    prefetchPatterns: prefetchPatterns.map(testRegexOrGlob),
     includeFiles,
     allAnonymous,
   }
@@ -52,19 +81,29 @@ function caddyPushDirectivePlugin({
 caddyPushDirectivePlugin.prototype.apply = function(compiler) {
   const { options } = this
   return compiler.plugin('emit', function(compilation, callback) {
-    const { includePatterns, includeFiles, allAnonymous } = options
+    const {
+      includePatterns,
+      ignorePatterns,
+      prefetchPatterns,
+      includeFiles,
+      allAnonymous,
+    } = options
 
-    const assets = Object.keys(compilation.assets).filter(asset => {
-      return includePatterns.every(pattern => pattern.test(asset)) // && !exclude.test(asset)
+    const assets = Object.keys(compilation.assets).filter(file => {
+      return (
+        includePatterns.some(test => test(file)) &&
+        (!ignorePatterns.length || ignorePatterns.every(test => !test(file)))
+      )
     })
+    !!process.env.DEBUG && console.log(JSON.stringify({ assets }, null, 1))
+    const directive = [
+      `header ${options.headerPath} {`,
+      `  +Link "${assetsLinkHeaderValue(assets)}"`,
+      `}`,
+      '',
+      `status 404 /${options.caddyImportFile}`,
+    ].join('\n')
 
-    const directive = `
-header ${options.headerPath} {
-  ${linkHeader(assets)}
-}
-
-status 404 /${options.caddyImportFile}
-`
     compilation.assets[options.caddyImportFile] = {
       source: () => directive,
       size: () => directive.length,
@@ -86,19 +125,29 @@ status 404 /${options.caddyImportFile}
       })
 
       return files
-        .filter(asset => !includeFiles.find(file => file.path === asset)) // override patterns with manual includes
+        .filter(asset => !includeFiles.find(file => asset.includes(file.path))) // override patterns with manual includes
         .map(asset => {
-          const preloadAs = fileAs(asset)
-          if (!preloadAs) {
+          const isPrefetch =
+            prefetchPatterns.length &&
+            prefetchPatterns.some(test => test(asset))
+          const preloadAs = isPrefetch ? null : fileAs(asset)
+          if (!isPrefetch && !preloadAs) {
             console.warn(
-              `No suitable 'as' attribute match for ${asset} - excluding!`
+              `No suitable 'as' attribute match for ${asset}, exluding from`,
+              `the link header directive. Use the 'includeFiles' option to`,
+              `manually include your asset with a corresponding 'as' attribute.`
             )
             return null
           }
-          let link = `</${asset}>; rel=preload; as=${preloadAs}`
+          let link = `</${asset}>; rel=${isPrefetch ? 'prefetch' : 'preload'}`
+          if (!isPrefetch) link += `; as=${preloadAs}`
           // fonts MUST be crossorigin=anonymous !
           if (preloadAs === 'font' || !!allAnonymous) {
             link += '; crossorigin=anonymous'
+          } else if (path.extname(asset) === '.ico') {
+            link += '; type=image/x-icon'
+          } else if (preloadAs === 'manifest') {
+            link += '; type=application/json'
           }
           return link
         })
@@ -107,11 +156,6 @@ status 404 /${options.caddyImportFile}
         .join(', ')
     }
 
-    function linkHeader(files) {
-      return `Link "${assetsLinkHeaderValue(files)}"`
-    }
-
-    // TODO: Add more mime types or find package for identifying preload types
     function fileAs(file) {
       const extensions = {
         js: 'script',
@@ -123,14 +167,23 @@ status 404 /${options.caddyImportFile}
         eot: 'font',
         otf: 'font',
         html: 'document',
+        xml: 'document',
         png: 'image',
         jpg: 'image',
         gif: 'image',
+        svg: 'image',
         jpeg: 'image',
         json: 'fetch',
-        ico: 'icon',
+        ico: 'image',
+        manifest: 'manifest',
       }
-      const ext = file.split('.').pop()
+
+      let ext
+
+      if (path.basename(file).includes('manifest.json')) {
+        ext = 'manifest'
+      } else ext = path.extname(file).replace(/\./, '')
+
       return extensions[ext]
     }
   })
