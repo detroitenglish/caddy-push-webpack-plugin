@@ -52,9 +52,9 @@ function caddyPushDirectivePlugin({
           `[caddy-push-plugin] All 'includePaths' entries must be plain objects`
         )
       }
-      if (!asset.hasOwnProperty('path') || !asset.hasOwnProperty('as')) {
+      if (!asset.hasOwnProperty('path')) {
         throw new Error(
-          `[caddy-push-plugin] All includeFiles assets require 'path' and 'as' properties`
+          `[caddy-push-plugin] All includeFiles assets require 'path' property`
         )
       }
     }
@@ -98,7 +98,7 @@ caddyPushDirectivePlugin.prototype.apply = function(compiler) {
     !!process.env.DEBUG && console.log(JSON.stringify({ assets }, null, 1))
     const directive = [
       `header ${options.headerPath} {`,
-      `  +Link "${assetsLinkHeaderValue(assets)}"`,
+      `  ${assetsLinkHeaderValue(assets)}`,
       `}`,
       '',
       `status 404 /${options.caddyImportFile}`,
@@ -112,21 +112,31 @@ caddyPushDirectivePlugin.prototype.apply = function(compiler) {
     return callback(null)
 
     function assetsLinkHeaderValue(files) {
-      const includedPaths = includeFiles.map(asset => {
-        const { type, nopush = false, crossorigin, path, as: loadAs } = asset
-        let link = `<${path}>; rel=preload; as=${loadAs}`
+      let preloads = []
+      let otherHints = []
+      includeFiles.forEach(asset => {
+        const {
+          type,
+          nopush = false,
+          crossorigin,
+          path,
+          as: loadAs,
+          rel = 'preload',
+        } = asset
+        let link = `<${path}>; rel=${rel}`
         if (type) link += `; type=${type}`
-        if (!!nopush === true) link += `; nopush`
+        if (loadAs) link += `; as=${loadAs}`
+        if (nopush) link += `; nopush`
         // fonts MUST be crossorigin=anonymous !
         if (loadAs === 'font' || crossorigin || !!allAnonymous) {
           link += '; crossorigin=anonymous'
         }
-        return link
+        return rel === 'preload' ? preloads.push(link) : otherHints.push(link)
       })
 
-      return files
+      files
         .filter(asset => !includeFiles.find(file => asset.includes(file.path))) // override patterns with manual includes
-        .map(asset => {
+        .forEach(asset => {
           const isPrefetch =
             prefetchPatterns.length &&
             prefetchPatterns.some(test => test(asset))
@@ -137,23 +147,21 @@ caddyPushDirectivePlugin.prototype.apply = function(compiler) {
               `the link header directive. Use the 'includeFiles' option to`,
               `manually include your asset with a corresponding 'as' attribute.`
             )
-            return null
+            return
           }
           let link = `</${asset}>; rel=${isPrefetch ? 'prefetch' : 'preload'}`
           if (!isPrefetch) link += `; as=${preloadAs}`
-          // fonts MUST be crossorigin=anonymous !
           if (preloadAs === 'font' || !!allAnonymous) {
             link += '; crossorigin=anonymous'
           } else if (path.extname(asset) === '.ico') {
             link += '; type=image/x-icon'
-          } else if (preloadAs === 'manifest') {
-            link += '; type=application/json'
           }
-          return link
+          return isPrefetch ? otherHints.push(link) : preloads.push(link)
         })
-        .filter(Boolean)
-        .concat(includedPaths)
-        .join(', ')
+
+      preloads = `+Link "${preloads.join(', ')}"`
+      otherHints = `+Link "${otherHints.join(', ')}"`
+      return [preloads, otherHints].join('\n  ')
     }
 
     function fileAs(file) {
