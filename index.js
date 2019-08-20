@@ -1,6 +1,5 @@
 const path = require('path')
 const minimatch = require('minimatch')
-
 function testRegexOrGlob(val) {
   if (val instanceof RegExp)
     return asset => {
@@ -34,7 +33,6 @@ function caddyPushDirectivePlugin({
   ignorePatterns = [],
   prefetchPatterns = [],
   includeFiles = [],
-  allAnonymous = false,
 }) {
   if (!Array.isArray(includePatterns)) {
     includePatterns = [includePatterns]
@@ -74,72 +72,111 @@ function caddyPushDirectivePlugin({
     ignorePatterns: ignorePatterns.map(testRegexOrGlob),
     prefetchPatterns: prefetchPatterns.map(testRegexOrGlob),
     includeFiles,
-    allAnonymous,
   }
 }
 
 caddyPushDirectivePlugin.prototype.apply = function(compiler) {
   const { options } = this
   return compiler.plugin('emit', function(compilation, callback) {
-    const {
+    let {
       includePatterns,
       ignorePatterns,
       prefetchPatterns,
       includeFiles,
-      allAnonymous,
+      headerPath,
     } = options
+    let queryPath = headerPath
+    let anon = compiler.options.output.crossOriginLoading === `anonymous`
+    let pushPaths = []
+    let preloads = []
+    let otherHints = []
+    let directPush
+    try {
+      headerPath = queryPath.split('?').shift()
+      directPush = headerPath !== queryPath
+      const assets = Object.keys(compilation.assets).filter(file => {
+        return (
+          includePatterns.some(test => test(file)) &&
+          (!ignorePatterns.length || ignorePatterns.every(test => !test(file)))
+        )
+      })
+      !!process.env.DEBUG && console.log(JSON.stringify({ assets }, null, 1))
 
-    const assets = Object.keys(compilation.assets).filter(file => {
-      return (
-        includePatterns.some(test => test(file)) &&
-        (!ignorePatterns.length || ignorePatterns.every(test => !test(file)))
-      )
-    })
-    !!process.env.DEBUG && console.log(JSON.stringify({ assets }, null, 1))
-    const directive = [
-      `header ${options.headerPath} {`,
-      `  ${assetsLinkHeaderValue(assets)}`,
-      `}`,
-      '',
-      `status 404 /${options.caddyImportFile}`,
-    ].join('\n')
+      const directive = [
+        `header ${headerPath} {`,
+        `  ${assetsLinkHeaderValue(assets)}`,
+        `}`,
+        pushPaths.length ? pushPaths : '',
+        `status 404 /${options.caddyImportFile}`,
+      ].join('\n')
 
-    compilation.assets[options.caddyImportFile] = {
-      source: () => directive,
-      size: () => directive.length,
+      compilation.assets[options.caddyImportFile] = {
+        source: () => directive,
+        size: () => directive.length,
+      }
+      callback(null)
+    } catch (err) {
+      return callback(err)
     }
 
-    return callback(null)
-
     function assetsLinkHeaderValue(files) {
-      let preloads = []
-      let otherHints = []
       includeFiles.forEach(asset => {
         const {
           type,
           nopush = false,
-          crossorigin,
           path,
           as: loadAs,
           rel = 'preload',
         } = asset
+        if (RegExp(headerPath).test(asset)) return
         let link = `<${path}>; rel=${rel}`
         if (type) link += `; type=${type}`
         if (loadAs) link += `; as=${loadAs}`
         if (nopush) link += `; nopush`
         // fonts MUST be crossorigin=anonymous !
-        if (loadAs === 'font' || crossorigin || !!allAnonymous) {
+        if (loadAs === 'font') {
           link += '; crossorigin=anonymous'
         }
         return rel === 'preload' ? preloads.push(link) : otherHints.push(link)
       })
 
+      const initialChunks = new Map()
+      const chunkData = {}
+      for (let chunk of Object.values(compilation.chunks)) {
+        const {
+          name,
+          // entryModule,
+          hasRuntime,
+          isOnlyInitial,
+          canBeInitial,
+          files,
+        } = chunk
+        for (let file of files) {
+          if (!/\.(m?js|css)$/.test(file)) continue
+          let isInit = isOnlyInitial.call(chunk)
+          let canBeInit = canBeInitial.call(chunk)
+          let entry = hasRuntime.call(chunk)
+          initialChunks.set(file, isInit)
+          chunkData[file] = {
+            chunkName: name,
+            canBeInit,
+            isInit,
+            entry,
+          }
+        }
+      }
+
       files
-        .filter(asset => !includeFiles.find(file => asset.includes(file.path))) // override patterns with manual includes
+        .filter(
+          asset =>
+            !RegExp(headerPath).test(asset) &&
+            !includeFiles.find(file => asset.includes(file.path))
+        ) // override patterns with manual includes
         .forEach(asset => {
           const isPrefetch =
-            prefetchPatterns.length &&
-            prefetchPatterns.some(test => test(asset))
+            (/css$/.test(asset) && !chunkData[asset].isInit) ||
+            (prefetchPatterns.length &&
+              prefetchPatterns.some(test => test(asset)))
           const preloadAs = isPrefetch ? null : fileAs(asset)
           if (!isPrefetch && !preloadAs) {
             console.warn(
@@ -150,18 +187,38 @@ caddyPushDirectivePlugin.prototype.apply = function(compiler) {
             return
           }
           let link = `</${asset}>; rel=${isPrefetch ? 'prefetch' : 'preload'}`
+          if (directPush) {
+            pushPaths.push(`/${asset}`)
+          }
           if (!isPrefetch) link += `; as=${preloadAs}`
-          if (preloadAs === 'font' || !!allAnonymous) {
+          const useCrossOrigin =
+            preloadAs === 'font' || (anon && !asset.includes('.css'))
+          if (useCrossOrigin) {
             link += '; crossorigin=anonymous'
           } else if (path.extname(asset) === '.ico') {
             link += '; type=image/x-icon'
           }
+          if (!chunkData[asset]) chunkData[asset] = {}
+          Object.assign(chunkData[asset], {
+            isPrefetch,
+            preloadAs,
+            useCrossOrigin,
+            link,
+          })
           return isPrefetch ? otherHints.push(link) : preloads.push(link)
         })
 
       preloads = `+Link "${preloads.join(', ')}"`
       otherHints = `+Link "${otherHints.join(', ')}"`
-      return [preloads, otherHints].join('\n  ')
+      let results = [preloads, otherHints]
+      if (directPush) {
+        pushPaths = `push ${headerPath} ${pushPaths.join(' ')}`
+      }
+      // fs.writeFileSync(
+      //   `${compiler.options.output.path}/.cpush.json`,
+      //   stringify(chunkData, null, 2)
+      // )
+      return results.join('\n  ')
     }
 
     function fileAs(file) {
